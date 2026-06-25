@@ -1,183 +1,272 @@
 import 'package:flutter/material.dart';
 
-class AdvisorScreen extends StatelessWidget {
+import '../services/advisor_service.dart';
+import '../services/database_service.dart';
+
+/// AI Advisor tab: auto-generated insights at the top, chat box at the bottom.
+///
+/// The advisor is injected as an [AdvisorService] so the rule-based engine
+/// can later be swapped for an LLM-backed one without changing this screen.
+class AdvisorScreen extends StatefulWidget {
   const AdvisorScreen({super.key});
 
-  static const _green = Color(0xFF2E7D32);
-  static const _muted = Color(0xFF6B7280);
-  static const _bg = Color(0xFFF7F9F7);
-  static const _border = Color(0x14000000);
+  @override
+  State<AdvisorScreen> createState() => _AdvisorScreenState();
+}
+
+class _AdvisorScreenState extends State<AdvisorScreen> {
+  // Swap this line to use a different advisor implementation.
+  final AdvisorService _advisor = RuleBasedAdvisor();
+
+  final _chatCtrl = TextEditingController();
+  final _scrollCtrl = ScrollController();
+
+  List<Insight> _insights = [];
+  final List<_ChatMessage> _messages = [];
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _refreshInsights();
+    _messages.add(_ChatMessage(
+      'Hi! I\'m your finance advisor. Ask me about your spending, '
+          'budgets, or how to save money.',
+      isUser: false,
+    ));
+  }
+
+  @override
+  void dispose() {
+    _chatCtrl.dispose();
+    _scrollCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _refreshInsights() async {
+    setState(() => _loading = true);
+    final db = DatabaseService.instance;
+    final expenses = await db.getExpensesForMonth(DateTime.now());
+    final budgets = await db.getBudgets();
+    setState(() {
+      _insights = _advisor.generateInsights(
+        monthExpenses: expenses,
+        budgets: budgets,
+      );
+      _loading = false;
+    });
+  }
+
+  Future<void> _send() async {
+    final text = _chatCtrl.text.trim();
+    if (text.isEmpty) return;
+    _chatCtrl.clear();
+
+    setState(() => _messages.add(_ChatMessage(text, isUser: true)));
+
+    final db = DatabaseService.instance;
+    final expenses = await db.getExpensesForMonth(DateTime.now());
+    final budgets = await db.getBudgets();
+    final reply = _advisor.answerQuestion(
+      question: text,
+      monthExpenses: expenses,
+      budgets: budgets,
+    );
+
+    setState(() => _messages.add(_ChatMessage(reply, isUser: false)));
+    _scrollToBottom();
+  }
+
+  void _scrollToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollCtrl.hasClients) {
+        _scrollCtrl.animateTo(
+          _scrollCtrl.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeOut,
+        );
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: _bg,
+      appBar: AppBar(
+        title: const Text('AI Advisor'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: _refreshInsights,
+          ),
+        ],
+      ),
       body: Column(
         children: [
-          _buildHero(),
           Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 14),
-                    child: Text('Personalized tips',
-                        style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                            color: Color(0xFF1A1A1A))),
-                  ),
-                  _tipCard(
-                    iconBg: Color(0xFFFFEBEE), icon: '🚨',
-                    badgeText: 'Action needed', badgeType: _BadgeType.bad,
-                    title: 'Food budget 97% used',
-                    body: 'You\'ve spent Rs 19,400 of your Rs 20,000 food budget with 8 days left. Reduce dining out to stay on track.',
-                  ),
-                  const SizedBox(height: 10),
-                  _tipCard(
-                    iconBg: Color(0xFFFFF8E1), icon: '⚡',
-                    badgeText: 'Watch out', badgeType: _BadgeType.warn,
-                    title: 'Thursday spike detected',
-                    body: 'Your Thursday spending is consistently highest. Consider setting a daily limit for mid-week.',
-                  ),
-                  const SizedBox(height: 10),
-                  _tipCard(
-                    iconBg: Color(0xFFE8F5E9), icon: '💪',
-                    badgeText: 'Well done', badgeType: _BadgeType.good,
-                    title: 'Entertainment under budget',
-                    body: 'Only 23% of your fun budget used. Great restraint — you have Rs 3,850 of breathing room.',
-                  ),
-                  const SizedBox(height: 10),
-                  _tipCard(
-                    iconBg: Color(0xFFE8F5E9), icon: '📊',
-                    badgeText: 'Insight', badgeType: _BadgeType.good,
-                    title: 'Saving opportunity',
-                    body: 'If you stay at current pace in Bills & Transport, you could save Rs 7,800 by month end.',
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ── HERO SCORE SECTION ────────────────────────────────────
-  Widget _buildHero() {
-    return Container(
-      color: _green,
-      padding: const EdgeInsets.fromLTRB(20, 52, 20, 20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text('Financial health score',
-              style: TextStyle(color: Colors.white70, fontSize: 11)),
-          const SizedBox(height: 6),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: const [
-              Text('72',
-                  style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 48,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: -2,
-                      height: 1)),
-              SizedBox(width: 12),
-              Padding(
-                padding: EdgeInsets.only(bottom: 4),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('/ 100',
-                        style: TextStyle(color: Colors.white, fontSize: 13)),
-                    SizedBox(height: 2),
-                    Text('Good · Keep it up!',
-                        style: TextStyle(color: Colors.white70, fontSize: 11)),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(8),
-            child: const LinearProgressIndicator(
-              value: 0.72,
-              minHeight: 8,
-              backgroundColor: Colors.white30,
-              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ── TIP CARD ──────────────────────────────────────────────
-  Widget _tipCard({
-    required Color iconBg,
-    required String icon,
-    required String badgeText,
-    required _BadgeType badgeType,
-    required String title,
-    required String body,
-  }) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: _border),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 38, height: 38,
-            decoration: BoxDecoration(
-                color: iconBg, borderRadius: BorderRadius.circular(10)),
-            child: Center(child: Text(icon, style: const TextStyle(fontSize: 18))),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            child: ListView(
+              controller: _scrollCtrl,
+              padding: const EdgeInsets.all(16),
               children: [
-                _badge(badgeText, badgeType),
-                const SizedBox(height: 3),
-                Text(title,
-                    style: const TextStyle(
-                        fontSize: 13, fontWeight: FontWeight.w600)),
-                const SizedBox(height: 3),
-                Text(body,
-                    style: const TextStyle(
-                        fontSize: 12, color: _muted, height: 1.5)),
+                Text('Insights',
+                    style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 8),
+                if (_loading)
+                  const Center(child: CircularProgressIndicator())
+                else
+                  ..._insights.map(_insightCard),
+                const Divider(height: 32),
+                Text('Ask the Advisor',
+                    style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 8),
+                ..._messages.map(_chatBubble),
               ],
             ),
           ),
+          _suggestedChips(),
+          _inputBar(),
         ],
       ),
     );
   }
 
-  Widget _badge(String text, _BadgeType type) {
-    Color bg, fg;
-    switch (type) {
-      case _BadgeType.good: bg = const Color(0xFFE8F5E9); fg = const Color(0xFF2E7D32); break;
-      case _BadgeType.warn: bg = const Color(0xFFFFF8E1); fg = const Color(0xFFF57F17); break;
-      case _BadgeType.bad:  bg = const Color(0xFFFFEBEE); fg = const Color(0xFFC62828); break;
-    }
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(6)),
-      child: Text(text,
-          style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: fg)),
+  Widget _insightCard(Insight i) {
+    final config = _severityConfig(i.severity);
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(config.icon, color: config.color),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(i.title,
+                      style: const TextStyle(fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 2),
+                  Text(i.detail,
+                      style: Theme.of(context).textTheme.bodySmall),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
     );
+  }
+
+  Widget _chatBubble(_ChatMessage m) {
+    return Align(
+      alignment: m.isUser ? Alignment.centerRight : Alignment.centerLeft,
+      child: Container(
+        margin: const EdgeInsets.symmetric(vertical: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        constraints: BoxConstraints(
+          maxWidth: MediaQuery.of(context).size.width * 0.78,
+        ),
+        decoration: BoxDecoration(
+          color: m.isUser
+              ? Theme.of(context).colorScheme.primary
+              : Theme.of(context).colorScheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Text(
+          m.text,
+          style: TextStyle(
+            color: m.isUser
+                ? Theme.of(context).colorScheme.onPrimary
+                : Theme.of(context).colorScheme.onSurface,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _suggestedChips() {
+    const prompts = [
+      'How much did I spend?',
+      'How can I save money?',
+      'Show my budget status',
+    ];
+    return SizedBox(
+      height: 44,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        children: prompts
+            .map((p) => Padding(
+          padding: const EdgeInsets.only(right: 8),
+          child: ActionChip(
+            label: Text(p),
+            onPressed: () {
+              _chatCtrl.text = p;
+              _send();
+            },
+          ),
+        ))
+            .toList(),
+      ),
+    );
+  }
+
+  Widget _inputBar() {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
+        child: Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: _chatCtrl,
+                textInputAction: TextInputAction.send,
+                onSubmitted: (_) => _send(),
+                decoration: InputDecoration(
+                  hintText: 'Ask about your finances...',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(24),
+                  ),
+                  contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 16),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            FloatingActionButton.small(
+              onPressed: _send,
+              child: const Icon(Icons.send),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  _SeverityConfig _severityConfig(InsightSeverity s) {
+    switch (s) {
+      case InsightSeverity.positive:
+        return const _SeverityConfig(Icons.check_circle, Colors.green);
+      case InsightSeverity.info:
+        return const _SeverityConfig(Icons.info, Colors.blue);
+      case InsightSeverity.warning:
+        return const _SeverityConfig(Icons.warning_amber, Colors.orange);
+      case InsightSeverity.alert:
+        return const _SeverityConfig(Icons.error, Colors.red);
+    }
   }
 }
 
-enum _BadgeType { good, warn, bad }
+class _ChatMessage {
+  final String text;
+  final bool isUser;
+  _ChatMessage(this.text, {required this.isUser});
+}
+
+class _SeverityConfig {
+  final IconData icon;
+  final Color color;
+  const _SeverityConfig(this.icon, this.color);
+}
