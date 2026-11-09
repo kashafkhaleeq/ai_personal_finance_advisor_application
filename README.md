@@ -52,13 +52,10 @@ lib/
    flutter run
    ```
    The app seeds sample data on first launch, so it is demo-ready.
-
-## About the "AI" layer (important for your report)
-
+   
 The advisor is built behind an abstract `AdvisorService` interface with
 two methods: `generateInsights()` and `answerQuestion()`. The MVP ships
 `RuleBasedAdvisor`, which analyses spending with deterministic heuristics:
-
 - Budget threshold checks (80% warning, 100% alert)
 - Dominant-category detection (concentration risk)
 - Linear month-end spending projection
@@ -72,7 +69,6 @@ a `ClaudeApiAdvisor` (or any LLM backend) can be added later by
 implementing the same two methods — no UI changes required. This is a
 good point to highlight in your FYP evaluation as an extensibility win.
 
-## Suggested FYP report sections
 
 - Problem statement: people lack low-effort personal finance guidance
 - Requirements: tracking, budgeting, advice — all offline / private
